@@ -395,13 +395,17 @@ func (c *DockerContainer) StartLogProducer(ctx context.Context) error {
 				return
 			default:
 				h := make([]byte, 8)
-				_, err := io.ReadFull(r, h)
+				_, err := r.Read(h)
 				if err != nil {
+					// proper type matching requires https://go-review.googlesource.com/c/go/+/250357/ (go 1.16)
+					if strings.Contains(err.Error(), "use of closed connection") {
+						now := time.Now()
+						since = fmt.Sprintf("%d.%09d", now.Unix(), int64(now.Nanosecond()))
+						goto BEGIN
+					}
 					// this explicitly ignores errors
 					// because we want to keep procesing even if one of our reads fails
-					now := time.Now()
-					since = fmt.Sprintf("%d.%09d", now.Unix(), int64(now.Nanosecond()))
-					goto BEGIN
+					continue
 				}
 
 				count := binary.BigEndian.Uint32(h[4:])
@@ -417,16 +421,11 @@ func (c *DockerContainer) StartLogProducer(ctx context.Context) error {
 				logTypes := []string{"", StdoutLog, StderrLog}
 
 				b := make([]byte, count)
-				_, err = io.ReadFull(r, b)
+				_, err = r.Read(b)
 				if err != nil {
 					// TODO: add-logger: use logger to log out this error
 					fmt.Fprintf(os.Stderr, "error occurred reading log with known length %s", err.Error())
-
-					// this explicitly ignores errors
-					// because we want to keep procesing even if one of our reads fails
-					now := time.Now()
-					since = fmt.Sprintf("%d.%09d", now.Unix(), int64(now.Nanosecond()))
-					goto BEGIN
+					continue
 				}
 				for _, c := range c.consumers {
 					c.Accept(Log{
