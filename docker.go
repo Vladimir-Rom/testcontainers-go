@@ -395,7 +395,7 @@ func (c *DockerContainer) StartLogProducer(ctx context.Context) error {
 				return
 			default:
 				h := make([]byte, 8)
-				_, err := r.Read(h)
+				_, err := io.ReadFull(r, h)
 				if err != nil {
 					// proper type matching requires https://go-review.googlesource.com/c/go/+/250357/ (go 1.16)
 					if strings.Contains(err.Error(), "use of closed connection") {
@@ -414,16 +414,14 @@ func (c *DockerContainer) StartLogProducer(ctx context.Context) error {
 				}
 				logType := h[0]
 				if logType > 2 {
-					fmt.Fprintf(os.Stderr, fmt.Sprintf("received invalid log type: %d", logType))
-					// sometimes docker returns logType = 3 which is an undocumented log type, so treat it as stdout
-					logType = 1
+					panic(fmt.Sprintf("received invalid log type: %d", logType))
 				}
 
 				// a map of the log type --> int representation in the header, notice the first is blank, this is stdin, but the go docker client doesn't allow following that in logs
 				logTypes := []string{"", StdoutLog, StderrLog}
 
 				b := make([]byte, count)
-				_, err = r.Read(b)
+				_, err = io.ReadFull(r, b)
 				if err != nil {
 					// TODO: add-logger: use logger to log out this error
 					fmt.Fprintf(os.Stderr, "error occurred reading log with known length %s", err.Error())
